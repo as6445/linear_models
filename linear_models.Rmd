@@ -1,28 +1,4 @@
 ---
-title: "linear models"
-author: "Ayako Sekiya"
-date: "2022-11-10"
-output: html_document
----
-
-```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
-```
-
-## R Markdown
-
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
-
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-```{r cars}
-summary(cars)
-```
-
-## Including Plots
-
-You can also embed plots, for example:
----
 title: "Linear Models"
 output: github_document
 ---
@@ -67,8 +43,130 @@ nyc_airbnb =
   select(price, stars, borough, neighbourhood, room_type)
 ```
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+
+## Fit the first model
+
+```{r}
+fit = lm(price ~ stars + borough, data = nyc_airbnb)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+```{r}
+nyc_airbnb = 
+  nyc_airbnb %>% 
+  mutate(
+    borough = fct_infreq(borough),
+    room_type = fct_infreq(room_type))
+
+fit = lm(price ~ stars + borough, data = nyc_airbnb)
+```
+
+```{r}
+summary(fit)
+summary(fit)$coef
+coef(fit)
+fitted.values(fit)
+```
+
+```{r}
+fit %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  mutate(term = str_replace(term, "^borough", "Borough: ")) %>% 
+  knitr::kable(digits = 3)
+```
+
+Let's change the reference category...
+
+```{r}
+
+fit=
+  nyc_airbnb %>% 
+  mutate(
+    borough = fct_infreq(borough)
+  ) %>% 
+  lm(price ~ stars + borough, data = .)
+
+fit %>% 
+  broom::tidy() %>% 
+  select(term, estimate, p.value) %>% 
+  mutate(term = str_replace(term, "^borough", "Borough: ")) %>% 
+  knitr::kable(digits = 3)
+```
+
+## Diagnostics
+
+```{r}
+modelr::add_residuals(nyc_airbnb, fit) %>% 
+  ggplot(aes(x= stars, y= resid)) +
+  geom_point()
+
+nyc_airbnb %>% 
+modelr::add_residuals(fit) %>% 
+  ggplot(aes(x= borough, y= resid)) +
+  geom_violin() +
+  ylim(-250,250)
+```
+
+## Hypothesis testing
+
+one coefficient (let's say `stars`.)
+
+```{r}
+fit %>% 
+  broom::tidy()
+```
+
+```{r}
+fit_null = lm(price ~ stars + borough, data = nyc_airbnb)
+fit_alt = lm(price ~ stars + borough + room_type, data = nyc_airbnb)
+```
+
+
+```{r}
+anova(fit_null, fit_alt) %>% 
+  broom::tidy()
+```
+
+## room type by borough
+
+interactions...
+
+```{r}
+nyc_airbnb %>% 
+  lm(price ~ stars * borough + room_type * borough, data = .) %>% 
+  broom::tidy() %>% 
+  knitr::kable(digits = 3)
+```
+
+
+## nesting
+
+```{r}
+nest_lm_res =
+  nyc_airbnb %>% 
+  nest(data = -borough) %>% 
+  mutate(
+    models = map(data, ~lm(price ~ stars + room_type, data = .x)),
+    results = map(models, broom::tidy)) %>% 
+  select(-data, -models) %>% 
+  unnest(results)
+```
+
+```{r}
+nest_lm_res %>% 
+  select(borough, term, estimate) %>% 
+  mutate(term = fct_inorder(term)) %>% 
+  pivot_wider(
+    names_from = term, values_from = estimate) %>% 
+  knitr::kable(digits = 3)
+```
+
+```{r}
+manhattan_nest_lm_res %>% 
+  filter(str_detect(term, "room_type")) %>% 
+  ggplot(aes(x = neighborhood, y = estimate)) + 
+  geom_point() + 
+  facet_wrap(~term) + 
+  theme(axis.text.x = element_text(angle = 80, hjust = 1))
+```
+
